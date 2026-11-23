@@ -8,7 +8,7 @@ from .api import router
 from .config import ZzzOdConfig, ZzzOdUserConfig
 from .expander import ZzzOdExpander
 
-_api = APIRouter(prefix="/api/scripts")
+_api = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 _api.include_router(router)
 
 
