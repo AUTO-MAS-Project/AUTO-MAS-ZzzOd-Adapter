@@ -1,4 +1,4 @@
-"""单账号代理通过宿主 worker 启动、采集原始日志并还原配置。"""
+"""单账号和多实例代理共用宿主调度生命周期。"""
 
 import asyncio
 import json
@@ -6,18 +6,27 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from auto_mas_core import UserExpander
 from auto_mas_core.host.config import ConfigCollection
 from auto_mas_core.host.models_task import TaskItem, TaskScriptItem, TaskUserItem
 
 from zzzod_adapter import auto_proxy
 from zzzod_adapter.config import ZzzOdConfig, ZzzOdUserConfig
+from zzzod_adapter.expander import ZzzOdExpander
 from zzzod_adapter.tools import instance_dir, write_app_group
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-async def test_single_account_worker_persists_result_or_restores_on_cancel(
-    tmp_path, monkeypatch, cancel
+@pytest.mark.parametrize(
+    ("grouped", "cancel", "fail_second"),
+    [
+        (False, False, False),
+        (False, True, False),
+        (True, False, False),
+        (True, True, False),
+        (True, False, True),
+    ],
+)
+async def test_worker_persists_result_or_restores_on_cancel(
+    tmp_path, monkeypatch, grouped, cancel, fail_second
 ):
     work_dir = tmp_path / "mas"
     work_dir.mkdir()
@@ -40,54 +49,71 @@ async def test_single_account_worker_persists_result_or_restores_on_cancel(
         ZzzOdConfig,
         payload={
             "Info": {"RootPath": str(root)},
-            "Game": {"CloseOnFinish": False},
+            "Game": {
+                "CloseOnFinish": False,
+                "AccountSwitch": "多实例切换" if grouped else "单实例切换",
+            },
             "Run": {"RunTimesLimit": 1},
         },
     )
     await scripts.commit()
     script = scripts[sid]
-    uid = script.users.add(
-        ZzzOdUserConfig,
-        payload={
-            "Info": {"SlotIdx": 1001, "RemainedDay": 3},
-            "OneDragon": {
-                "AppList": json.dumps([{"app_id": "mail", "enabled": True}]),
-                "AfterDone": "无",
-            },
-        },
-    )
-    await script.users.commit()
-    account = script.users[uid]
     task = TaskItem()
     await task.activate()
     rid = task.scripts.add(TaskScriptItem, payload={"info": {"script_id": str(sid)}})
     await task.scripts.commit()
     run = task.scripts[rid]
-    urid = run.users.add(TaskUserItem, payload={"info": {"user_id": str(uid)}})
-    await run.users.commit()
-    user = run.users[urid]
+    accounts = []
+    users = []
+    slots = [slot]
+    if grouped:
+        second_slot = instance_dir(root, 1002)
+        second_slot.mkdir()
+        slots.append(second_slot)
+    for index, directory in enumerate(slots, start=1):
+        uid = script.users.add(
+            ZzzOdUserConfig,
+            payload={
+                "Info": {
+                    "Name": f"Account{index}",
+                    "SlotIdx": int(directory.name),
+                    "RemainedDay": 3,
+                    "Id": f"fixture-{index}",
+                    "Password": "fixture-password",
+                },
+                "OneDragon": {
+                    "AppList": json.dumps([{"app_id": "mail", "enabled": True}]),
+                    "AfterDone": "无",
+                },
+            },
+        )
+        await script.users.commit()
+        accounts.append(script.users[uid])
+        urid = run.users.add(TaskUserItem, payload={"info": {"user_id": str(uid)}})
+        await run.users.commit()
+        users.append(run.users[urid])
 
-    class Expander(UserExpander):
-        def build_worker(self, user, config):
-            return auto_proxy.ZzzOdAutoProxyWorker(self, user, config)
-
-    expander = Expander(run, script)
+    expander = ZzzOdExpander(run, script)
     expander.history = SimpleNamespace(
         begin_user_history_capture=Mock(), save_user_history=AsyncMock()
     )
     ready = asyncio.Event()
     running = True
 
-    async def launch(path, *_args, **_kwargs):
+    async def launch(path, *args, **_kwargs):
         assert path == launcher
+        assert ("--instance" in args) == grouped
         assert registry.read_bytes() != original
+        assert all(account.is_locked for account in accounts)
 
     async def monitor(_path, started_at):
         nonlocal running
         if not cancel:
-            records = slot / "app_run_record"
-            records.mkdir(exist_ok=True)
-            (records / "mail.yml").write_text("run_status: 1\n")
+            for i, directory in enumerate(slots):
+                records = directory / "app_run_record"
+                records.mkdir(exist_ok=True)
+                status = 2 if fail_second and i == 1 else 1
+                (records / "mail.yml").write_text(f"run_status: {status}\n")
             running = False
             await log_callback(["completed\n"], started_at)
         ready.set()
@@ -102,6 +128,7 @@ async def test_single_account_worker_persists_result_or_restores_on_cancel(
 
     async def kill():
         assert registry.read_bytes() != original
+        assert all(account.is_locked for account in accounts)
 
     log_callback = None
     monkeypatch.setattr(auto_proxy, "Config", SimpleNamespace(ScriptConfig=scripts))
@@ -120,6 +147,9 @@ async def test_single_account_worker_persists_result_or_restores_on_cancel(
         auto_proxy, "Notify", SimpleNamespace(push_statistics_report=AsyncMock())
     )
 
+    report = AsyncMock()
+    monkeypatch.setattr("zzzod_adapter.expander.Notify.push_proxy_result", report)
+
     expander.start()
     try:
         await asyncio.wait_for(ready.wait(), timeout=5)
@@ -129,14 +159,27 @@ async def test_single_account_worker_persists_result_or_restores_on_cancel(
         await expander.stop()
 
     assert expander.error is None
+    report.assert_awaited_once()
+    result = report.await_args.kwargs["report"]
+    assert result.completed_count == (0 if cancel else len(users) - fail_second)
+    assert result.uncompleted_count == int(fail_second)
     assert registry.read_bytes() == original
-    expander.history.save_user_history.assert_awaited_once()
-    if cancel:
-        assert user.status == "已取消"
-        assert account.Data.ProxyTimes == 0
-        assert account.Info.RemainedDay == 3
-    else:
-        assert user.status == "完成"
-        assert account.Data.ProxyTimes == 1
-        assert account.Info.RemainedDay == 2
-        assert account.Data.LauncherLastGood == "集成"
+    assert not any(account.is_locked for account in accounts)
+    assert expander.history.save_user_history.await_count == (
+        1 if cancel else len(users)
+    )
+    for i, (user, account) in enumerate(zip(users, accounts, strict=True)):
+        if cancel:
+            assert user.status == "已取消"
+            assert account.Data.ProxyTimes == 0
+            assert account.Info.RemainedDay == 3
+        elif fail_second and i == 1:
+            assert user.status == "异常"
+            assert account.Data.ProxyTimes == 0
+            assert account.Info.RemainedDay == 3
+        else:
+            assert user.status == "完成"
+            assert account.Data.ProxyTimes == 1
+            assert account.Info.RemainedDay == 2
+    if not cancel and not fail_second:
+        assert accounts[0].Data.LauncherLastGood == "集成"

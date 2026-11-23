@@ -634,6 +634,8 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
                 self.script_root_path, slot
             )
             self._multi_uids.add(user_item.user_id)
+            if self._grouped:
+                await user_item.set_state(status="运行")
 
     def _write_view(self) -> None:
         """（重）写合成注册表视图：仅本托管注入槽，活跃=首槽。
@@ -715,11 +717,7 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
                 return (
                     f"存在同名账号: {'、'.join(duplicates)}, 请为每个账号设置不同的名称"
                 )
-            if self._is_multi_account():
-                # 多实例切换：cur_user 只是触发者，逐账号跳过条件在注入名单中施加
-                if not await self._collect_inject_users():
-                    return "没有可注入的用户, 请确认用户已启用且任务配置非空"
-            else:
+            if not self._is_multi_account():
                 try:
                     if not self._enabled_app_list():
                         return "未启用任何一条龙任务, 请在账号配置中开启至少一个任务"
@@ -865,9 +863,8 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
                 # 多实例切换：全部启用账号 → 各自绑定槽，一条龙多账号一次跑
                 inject_users = await self._collect_inject_users()
                 if not inject_users:
-                    raise RuntimeError(
-                        "没有可注入的用户, 请确认用户已启用且任务配置非空"
-                    )
+                    self._run_started = False
+                    return
                 for warning in self._guard_warnings:
                     await self._push_dispatch_log(warning)
                     await Publisher.send(
@@ -1685,7 +1682,7 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
             await self._apply_proxy_success(self.cur_user_config)
             await self.cur_user_item.set_state(status="完成")
             logger.success(f"账号 {self.cur_user_uid} 的 ZZZ-OD 自动代理任务已完成")
-        elif not self.cancelled:
+        elif not self.cancelled and self.cur_user_item.status != "跳过":
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
             if self.cur_user_item.status != "完成":
