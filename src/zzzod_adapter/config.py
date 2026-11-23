@@ -19,8 +19,10 @@
 """绝区零一条龙托管和账号配置，沿用原有专项字段。"""
 
 import json
+from collections.abc import Awaitable, Callable
 from copy import deepcopy
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
+from uuid import UUID
 
 from auto_mas_core import ScriptEntry, UserEntry
 from auto_mas_core.host.config import (
@@ -45,7 +47,10 @@ from auto_mas_core.host.models_config_shared import (
     none_as,
 )
 from auto_mas_core.host.utils import constants as _utils_constants
-from pydantic import Field
+from pydantic import Field, model_validator
+
+if TYPE_CHECKING:
+    from auto_mas_core.host.utils_common_config import restore as restore_sdk
 
 
 class ZzzOdUserConfig(UserEntry):
@@ -325,6 +330,23 @@ class ZzzOdUserConfig(UserEntry):
     def plugin_proxy_status(self) -> str:
         return self.Data.LastProxyStatus
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_native_patch(cls, data: Any) -> Any:
+        """显式设为原生来源时清理注入编排，保留旧更新入口语义。"""
+        if not isinstance(data, dict):
+            return data
+        info = data.get("Info")
+        if (
+            not isinstance(info, dict)
+            or _utils_constants.normalize_base_source(info.get("Base")) != "native"
+        ):
+            return data
+        normalized = deepcopy(data)
+        normalized["Info"]["IfQuickConfig"] = False
+        normalized.setdefault("OneDragon", {})["AppList"] = "[]"
+        return normalized
+
     async def _activate_from_payload(
         self, payload: dict[str, Any], *, regenerate_uuids: bool = False
     ) -> None:
@@ -426,3 +448,38 @@ class ZzzOdConfig(ScriptEntry):
         await super()._activate_from_payload(
             normalized, regenerate_uuids=regenerate_uuids
         )
+
+    def create_restore_service(
+        self, user_id: str, *, force: bool = False
+    ) -> "restore_sdk.ConfigRestoreService":
+        from auto_mas_core import Config
+        from auto_mas_core.host.utils_common_config import restore
+
+        from .tools.restore_service import RESTORE_POOLS
+
+        return restore.build_restore_service(
+            restore.RestoreContext(
+                config=Config,
+                script_config=self,
+                script_id=str(self.uid),
+                user_id=user_id,
+                force=force,
+            ),
+            RESTORE_POOLS,
+        )
+
+    async def prepare_script_removal(self) -> None:
+        from auto_mas_core import Config
+
+        from .api_service import get_service
+
+        await get_service(Config).recovery.prepare_script_removal(self)
+
+    def prepare_user_removal(
+        self, user_id: UUID
+    ) -> Callable[[], Awaitable[None]] | None:
+        from auto_mas_core import Config
+
+        from .api_service import get_service
+
+        return get_service(Config).recovery.prepare_user_removal(self, user_id)
