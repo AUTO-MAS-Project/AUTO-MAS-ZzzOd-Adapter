@@ -505,6 +505,7 @@ logger = get_logger("托管管理 API")
     summary="获取 zzz-od 实例（账号）列表",
     response_model=ZzzOdInstancesOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def get_zzzod_instances_api(scriptId: str) -> ZzzOdInstancesOut:
     """返回 zzz-od 实例列表（供「快速导入」选择来源实例）。"""
@@ -538,6 +539,7 @@ async def get_zzzod_instances_api(scriptId: str) -> ZzzOdInstancesOut:
     summary="新建一条龙实例（直控实例管理）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def add_zzzod_instance_api(
     body: ZzzOdInstanceAddIn = Body(...),
@@ -566,6 +568,7 @@ async def add_zzzod_instance_api(
     summary="重命名一条龙实例（直控实例管理）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def rename_zzzod_instance_api(
     body: ZzzOdInstanceRenameIn = Body(...),
@@ -596,6 +599,7 @@ async def rename_zzzod_instance_api(
     summary="切换实例是否参与「全部实例」运行（直控实例管理）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def set_zzzod_instance_active_in_od_api(
     body: ZzzOdInstanceFlagIn = Body(...),
@@ -626,6 +630,7 @@ async def set_zzzod_instance_active_in_od_api(
     summary="把所选实例设为当前活跃（直控「选择即运行」）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def set_zzzod_active_instance_api(
     body: ZzzOdInstanceActiveIn = Body(...),
@@ -656,6 +661,7 @@ async def set_zzzod_active_instance_api(
     summary="切换实例「运行前切换账号」（直控实例管理；一条龙原生能力）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def set_zzzod_instance_force_login_api(
     body: ZzzOdInstanceForceLoginIn = Body(...),
@@ -686,6 +692,7 @@ async def set_zzzod_instance_force_login_api(
     summary="设置运行实例（原生来源；one_dragon.yml 全局 instance_run）",
     response_model=OutBase,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def set_zzzod_instance_run_mode_api(
     body: ZzzOdInstanceRunModeIn = Body(...),
@@ -918,6 +925,7 @@ async def restore_zzzod_recycle_api(
     summary="获取预备编队列表（名称 + 绑定配队方案）",
     response_model=ZzzOdTeamsOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def get_zzzod_teams_api(
     scriptId: str,
@@ -957,6 +965,7 @@ async def get_zzzod_teams_api(
     summary="整表保存预备编队（名称 + 绑定配队方案；成员按行保留）",
     response_model=ZzzOdTeamsSaveOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def save_zzzod_teams_api(
     script: ZzzOdTeamsSaveIn = Body(...),
@@ -1002,6 +1011,7 @@ async def save_zzzod_teams_api(
     summary="获取一条龙任务目录",
     response_model=ZzzOdCatalogOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
     """静态解析安装目录下的应用注册信息，供账号配置渲染任务卡片中文名。"""
@@ -1032,6 +1042,7 @@ async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
     summary="获取任务级配置（字段元数据 + 当前值）",
     response_model=ZzzOdAppConfigOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def get_zzzod_app_config_api(
     scriptId: str,
@@ -1071,6 +1082,7 @@ async def get_zzzod_app_config_api(
     summary="获取任务计划的动态选项（副本级联树/配队方案/挑战配置）",
     response_model=ZzzOdTaskOptionsOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOptionsOut:
     """静态读取安装目录（compendium 数据 + 配置目录扫描），与一条龙原生 GUI 选项同源。"""
@@ -1105,6 +1117,7 @@ async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOpti
     summary="保存任务级配置（绑定槽；直控传 instanceIdx 直接写原生实例）",
     response_model=ZzzOdAppConfigOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def save_zzzod_app_config_api(
     script: ZzzOdAppConfigSaveIn = Body(...),
@@ -1150,6 +1163,7 @@ async def save_zzzod_app_config_api(
     summary="获取实例原生配置（直控页面表单数据）",
     response_model=ZzzOdNativeConfigOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def get_zzzod_native_config_api(
     scriptId: str, instanceIdx: int
@@ -1195,6 +1209,7 @@ async def get_zzzod_native_config_api(
     summary="保存实例原生配置（原生来源模式直接写回一条龙原始 YAML）",
     response_model=ZzzOdNativeConfigOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def save_zzzod_native_config_api(
     script: ZzzOdNativeConfigIn = Body(...),
@@ -1251,6 +1266,7 @@ async def save_zzzod_native_config_api(
     summary="获取一条龙两种启动器的安装情况与默认项",
     response_model=ZzzOdLauncherOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
     """渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。"""
@@ -1277,6 +1293,7 @@ async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
     summary="基于一条龙已有实例快速生成当前账号配置（覆盖前自动归档当前配置）",
     response_model=ZzzOdImportOut,
     status_code=200,
+    openapi_extra={"x-auto-mas-mcp": True},
 )
 async def import_zzzod_config_api(
     script: ZzzOdImportIn = Body(...),
