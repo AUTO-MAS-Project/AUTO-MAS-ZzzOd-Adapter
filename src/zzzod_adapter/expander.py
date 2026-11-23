@@ -1,6 +1,7 @@
 """按一条龙的实例运行方式在已锁托管内展开账号。"""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from auto_mas_core import TaskMode, UserExpander
@@ -85,62 +86,71 @@ class ZzzOdExpander(UserExpander[ZzzOdConfig]):
             else:
                 direct.append(user)
 
+        shutdowns: list[Callable[[], Awaitable[None]]] = []
         if inject:
-            await self._run_group(tuple(inject))
+            await self._run_group(tuple(inject), shutdowns=shutdowns)
         await super().dispatch_users(tuple(direct))
+        if shutdowns and all(user.status in ("完成", "跳过") for user in users):
+            await shutdowns[0]()
 
     def _binding(self, entry: ZzzOdUserConfig):
         return entry.game if entry.game.game_id != "-" else self.script_config.game
 
-    async def _run_group(self, users: tuple[TaskUserItem, ...]) -> None:
+    async def _run_group(
+        self,
+        users: tuple[TaskUserItem, ...],
+        *,
+        shutdowns: list[Callable[[], Awaitable[None]]],
+    ) -> None:
         async with self.lock_user_group(users) as locked:
-            if not locked:
-                return
-            lead, config = locked[0]
-            lead_binding = self._binding(config)
-            participants = []
+            # 一轮一条龙只持有一个游戏设备的会话，其他设备按首次出现的顺序另起一轮。
+            groups = {}
             for user, entry in locked:
                 binding = self._binding(entry)
-                reason = binding.unavailable_reason
-                if (binding.game_id, binding.device_id) != (
-                    lead_binding.game_id,
-                    lead_binding.device_id,
-                ):
-                    reason = "多实例切换的账号必须绑定同一个游戏和设备"
+                reason = entry.game.unavailable_reason or binding.unavailable_reason
                 if reason:
                     await self.record_user_state(user, status="异常", reason=reason)
                 else:
-                    participants.append((user, entry))
-            if not participants:
-                return
+                    target = (binding.game_id, binding.device_id)
+                    groups.setdefault(target, []).append((user, entry))
+            defer_shutdown = shutdowns.append if len(groups) > 1 else None
+            for participants in groups.values():
+                await self._run_bound_group(participants, defer_shutdown=defer_shutdown)
 
-            lead, config = participants[0]
-            self.script_info.current.index = lead.uid
-            await self.script_info.commit()
-            runs = tuple(user for user, _ in participants)
-            try:
-                if self.game_session is not None:
-                    await self.game_session.select(config)
-                await self.spawn(
-                    ZzzOdAutoProxyWorker(self, lead, config, participants=runs)
+    async def _run_bound_group(
+        self,
+        participants: list[tuple[TaskUserItem, ZzzOdUserConfig]],
+        *,
+        defer_shutdown: Callable[[Callable[[], Awaitable[None]]], None] | None,
+    ) -> None:
+        """完成同一设备的整轮执行和收尾后，再交给下一组。"""
+        lead, config = participants[0]
+        self.script_info.current.index = lead.uid
+        await self.script_info.commit()
+        runs = tuple(user for user, _ in participants)
+        try:
+            if self.game_session is not None:
+                await self.game_session.select(config)
+            await self.spawn(
+                ZzzOdAutoProxyWorker(
+                    self, lead, config, participants=runs, defer_shutdown=defer_shutdown
                 )
-            except asyncio.CancelledError:
-                for user in runs:
-                    if user.status in ("等待", "运行"):
-                        await user.set_state(status="已取消")
-                raise
-            except Exception as error:
-                for user in runs:
-                    if user.status in ("等待", "运行"):
-                        await self.record_user_state(
-                            user, status="异常", reason=str(error)
-                        )
-            finally:
-                if self.game_session is not None:
-                    await self.game_session.release_account()
-
+            )
+        except asyncio.CancelledError:
             for user in runs:
                 if user.status in ("等待", "运行"):
-                    await self.record_user_state(
-                        user, status="异常", reason="一条龙成组运行未返回账号结果"
-                    )
+                    await user.set_state(status="已取消")
+            raise
+        except Exception as error:
+            for user in runs:
+                if user.status in ("等待", "运行"):
+                    await self.record_user_state(user, status="异常", reason=str(error))
+        finally:
+            if self.game_session is not None:
+                await self.game_session.release_account()
+
+        for user in runs:
+            if user.status in ("等待", "运行"):
+                await self.record_user_state(
+                    user, status="异常", reason="一条龙成组运行未返回账号结果"
+                )

@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from auto_mas_core.host.config import ConfigCollection
+import yaml
+from auto_mas_core import GameEntry
+from auto_mas_core.host.config import ConfigCollection, config_manager
 from auto_mas_core.host.models_task import TaskItem, TaskScriptItem, TaskUserItem
 
 from zzzod_adapter import auto_proxy
@@ -16,17 +18,19 @@ from zzzod_adapter.tools import instance_dir, write_app_group
 
 
 @pytest.mark.parametrize(
-    ("grouped", "cancel", "fail_second"),
+    ("grouped", "cancel", "fail_second", "split_targets"),
     [
-        (False, False, False),
-        (False, True, False),
-        (True, False, False),
-        (True, True, False),
-        (True, False, True),
+        (False, False, False, False),
+        (False, True, False, False),
+        (True, False, False, False),
+        (True, True, False, False),
+        (True, False, True, False),
+        (True, False, True, True),
+        (True, False, False, True),
     ],
 )
 async def test_worker_persists_result_or_restores_on_cancel(
-    tmp_path, monkeypatch, grouped, cancel, fail_second
+    tmp_path, monkeypatch, grouped, cancel, fail_second, split_targets
 ):
     work_dir = tmp_path / "mas"
     work_dir.mkdir()
@@ -43,6 +47,14 @@ async def test_worker_persists_result_or_restores_on_cancel(
     registry = root / "config" / "one_dragon.yml"
     original = b"instance_list:\n  - idx: 1\n    name: Native\n    active: true\n"
     registry.write_bytes(original)
+    if split_targets:
+        collections = dict(config_manager._collections)
+        collections.pop("games", None)
+        monkeypatch.setattr(config_manager, "_collections", collections)
+        games = ConfigCollection.build([GameEntry], name="games")
+        await games.activate()
+        game_id = games.add(GameEntry)
+        await games.commit()
     scripts = ConfigCollection.build([ZzzOdConfig])
     await scripts.activate()
     sid = scripts.add(
@@ -71,9 +83,11 @@ async def test_worker_persists_result_or_restores_on_cancel(
         second_slot.mkdir()
         slots.append(second_slot)
     for index, directory in enumerate(slots, start=1):
+        game = {"game_id": game_id} if split_targets and index == 2 else {}
         uid = script.users.add(
             ZzzOdUserConfig,
             payload={
+                "game": game,
                 "Info": {
                     "Name": f"Account{index}",
                     "SlotIdx": int(directory.name),
@@ -83,7 +97,7 @@ async def test_worker_persists_result_or_restores_on_cancel(
                 },
                 "OneDragon": {
                     "AppList": json.dumps([{"app_id": "mail", "enabled": True}]),
-                    "AfterDone": "无",
+                    "AfterDone": "关机" if split_targets and index == 1 else "无",
                 },
             },
         )
@@ -99,17 +113,29 @@ async def test_worker_persists_result_or_restores_on_cancel(
     )
     ready = asyncio.Event()
     running = True
+    launched_slots = []
 
     async def launch(path, *args, **_kwargs):
+        nonlocal running
+        running = True
         assert path == launcher
-        assert ("--instance" in args) == grouped
         assert registry.read_bytes() != original
         assert all(account.is_locked for account in accounts)
+        shutdown.assert_not_awaited()
+        if "--instance" in args:
+            launched_slots.append(
+                tuple(map(int, args[args.index("--instance") + 1].split(",")))
+            )
+        else:
+            active = yaml.safe_load(registry.read_bytes())["instance_list"]
+            launched_slots.append(tuple(row["idx"] for row in active if row["active"]))
 
     async def monitor(_path, started_at):
         nonlocal running
         if not cancel:
             for i, directory in enumerate(slots):
+                if int(directory.name) not in launched_slots[-1]:
+                    continue
                 records = directory / "app_run_record"
                 records.mkdir(exist_ok=True)
                 status = 2 if fail_second and i == 1 else 1
@@ -129,6 +155,15 @@ async def test_worker_persists_result_or_restores_on_cancel(
     async def kill():
         assert registry.read_bytes() != original
         assert all(account.is_locked for account in accounts)
+
+    async def schedule_shutdown(*args):
+        assert args == ("shutdown", "/s", "/t", "60")
+        assert launched_slots == [(1001,), (1002,)]
+        assert registry.read_bytes() == original
+        return SimpleNamespace(wait=AsyncMock(return_value=0))
+
+    shutdown = AsyncMock(side_effect=schedule_shutdown)
+    monkeypatch.setattr(auto_proxy, "create_subprocess", shutdown)
 
     log_callback = None
     monkeypatch.setattr(auto_proxy, "Config", SimpleNamespace(ScriptConfig=scripts))
@@ -165,6 +200,13 @@ async def test_worker_persists_result_or_restores_on_cancel(
     assert result.uncompleted_count == int(fail_second)
     assert registry.read_bytes() == original
     assert not any(account.is_locked for account in accounts)
+    expected_launches = (
+        [(1001,), (1002,)]
+        if split_targets
+        else [tuple(int(directory.name) for directory in slots)]
+    )
+    assert launched_slots == expected_launches
+    assert shutdown.await_count == int(split_targets and not fail_second)
     assert expander.history.save_user_history.await_count == (
         1 if cancel else len(users)
     )

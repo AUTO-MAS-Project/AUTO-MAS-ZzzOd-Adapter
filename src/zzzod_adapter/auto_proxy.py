@@ -368,7 +368,9 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
     # 立刻打断 shield 的 final_task，导致 kill_managed_process 没跑——取消任务后
     # zzz-od 启动器/一行龙本体仍继续运行
 
-    def __init__(self, expander, user, config, *, participants=None):
+    def __init__(
+        self, expander, user, config, *, participants=None, defer_shutdown=None
+    ):
         super().__init__(expander, user, config)
         self.script_config = expander.script_config
         self._account_configs = self.script_config.users
@@ -418,6 +420,7 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
         self._multi_run_status = ""
         self._history_users: dict[str, TaskUserItem] = {}
         self._shutdown_after_success: bool = False
+        self._defer_shutdown = defer_shutdown
         self.run_complete = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
@@ -1660,21 +1663,27 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
 
         # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
         if self._shutdown_after_success and self.run_complete and not self.cancelled:
-            if desktop_process_target.get() is not None:
-                await self._push_dispatch_log("桌面分身任务已完成，已跳过本机关机")
-                return
-            shutdown_error = ""
-            try:
-                process = await create_subprocess("shutdown", "/s", "/t", "60")
-                if await process.wait() != 0:
-                    shutdown_error = "任务已完成，但未能安排自动关机，请检查系统权限"
-            except OSError as e:
-                shutdown_error = f"任务已完成，但未能安排自动关机: {e}"
-            if shutdown_error:
-                logger.error(shutdown_error)
-                await self._push_dispatch_log(shutdown_error)
+            if self._defer_shutdown is None:
+                await self._schedule_shutdown()
             else:
-                await self._push_dispatch_log("一条龙任务已完成，60 秒后关机")
+                self._defer_shutdown(self._schedule_shutdown)
+
+    async def _schedule_shutdown(self) -> None:
+        if desktop_process_target.get() is not None:
+            await self._push_dispatch_log("桌面分身任务已完成，已跳过本机关机")
+            return
+        shutdown_error = ""
+        try:
+            process = await create_subprocess("shutdown", "/s", "/t", "60")
+            if await process.wait() != 0:
+                shutdown_error = "任务已完成，但未能安排自动关机，请检查系统权限"
+        except OSError as e:
+            shutdown_error = f"任务已完成，但未能安排自动关机: {e}"
+        if shutdown_error:
+            logger.error(shutdown_error)
+            await self._push_dispatch_log(shutdown_error)
+        else:
+            await self._push_dispatch_log("一条龙任务已完成，60 秒后关机")
 
     async def _persist_user_run_result(self) -> None:
         # 多实例切换：各账号的数据已在 _judge_multi 逐账号写回，避免重复计数
