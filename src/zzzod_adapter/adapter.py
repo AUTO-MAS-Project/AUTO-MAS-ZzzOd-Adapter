@@ -1,0 +1,23 @@
+"""将插件配置、执行器和专项路由注册到 MAS。"""
+
+from auto_mas_core import ScriptAdapterPlugin, ScriptTypeDecl
+from fastapi import APIRouter
+
+from .api import router
+from .config import ZzzOdConfig, ZzzOdUserConfig
+from .expander import ZzzOdExpander
+
+_api = APIRouter(prefix="/api/scripts")
+_api.include_router(router)
+
+
+class ZzzOdAdapter(ScriptAdapterPlugin):
+    script_type_key = "ZzzOd"
+    api_router = _api
+    decl = ScriptTypeDecl(
+        script_type=ZzzOdConfig,
+        user_type=ZzzOdUserConfig,
+        expander_class=ZzzOdExpander,
+        activity_game="zenless",
+        game_kinds=("client",),
+    )
