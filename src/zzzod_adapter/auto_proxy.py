@@ -989,6 +989,8 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
                 f"{' '.join(launcher_args)}"
             )
 
+            # LogFlow #2072：每次拉起前捕获 FileInput 起点。成组注入绑定托管，
+            # 单账号绑定当前账号，避免把同一份进程日志重复采集到各槽。
             point(self, "start_script")
             await self.launcher_process_manager.open_process(
                 self.launcher_exe_path,
@@ -1544,6 +1546,7 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
         if self.log_monitor is not None:
             with suppress(Exception):
                 await self.log_monitor.stop()
+        # LogFlow #2072：正常轮次与取消收尾均先交接监控尾部，再关闭采集会话。
         await self.kill_managed_process(kill_game=self._mas_should_close_game())
         await self._restore_injection()
 

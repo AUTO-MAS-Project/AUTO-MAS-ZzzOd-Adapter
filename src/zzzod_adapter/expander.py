@@ -30,6 +30,8 @@ class ZzzOdExpander(UserExpander[ZzzOdConfig]):
         name = self.script_info.info.name
         result = self.script_info.info.result
         try:
+            # LogFlow #2072：所有账号会话结束后，此处用托管的 LogFlowTaskReport
+            # 提交同一份汇总，保留 Notify 对过滤及去重的所有权。
             await Notify.push_proxy_result(
                 title=f"{now:%m-%d} | {name}的自动代理任务报告",
                 report=TaskResultReport.from_message(
