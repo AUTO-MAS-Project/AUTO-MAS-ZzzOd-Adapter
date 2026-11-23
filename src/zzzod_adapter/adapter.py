@@ -1,6 +1,7 @@
 """将插件配置、执行器和专项路由注册到 MAS。"""
 
-from auto_mas_core import ScriptAdapterPlugin, ScriptTypeDecl
+from auto_mas_core import ScriptAdapterPlugin, ScriptEntry, ScriptTypeDecl
+from auto_mas_core.host.utils import IS_ELEVATED
 from fastapi import APIRouter
 
 from .api import router
@@ -9,6 +10,10 @@ from .expander import ZzzOdExpander
 
 _api = APIRouter(prefix="/api/scripts")
 _api.include_router(router)
+
+
+def _supports_desktop_session(_config: ScriptEntry) -> bool:
+    return IS_ELEVATED
 
 
 class ZzzOdAdapter(ScriptAdapterPlugin):
@@ -20,4 +25,5 @@ class ZzzOdAdapter(ScriptAdapterPlugin):
         expander_class=ZzzOdExpander,
         activity_game="zenless",
         game_kinds=("client",),
+        desktop_session_check=_supports_desktop_session,
     )
