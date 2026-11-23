@@ -16,6 +16,10 @@ def _supports_desktop_session(_config: ScriptEntry) -> bool:
     return IS_ELEVATED
 
 
+def _new_user_defaults() -> dict:
+    return {"Info": {"Base": "native", "IfQuickConfig": False}}
+
+
 class ZzzOdAdapter(ScriptAdapterPlugin):
     script_type_key = "ZzzOd"
     api_router = _api
@@ -26,4 +30,5 @@ class ZzzOdAdapter(ScriptAdapterPlugin):
         activity_game="zenless",
         game_kinds=("client",),
         desktop_session_check=_supports_desktop_session,
+        new_user_defaults=_new_user_defaults,
     )
