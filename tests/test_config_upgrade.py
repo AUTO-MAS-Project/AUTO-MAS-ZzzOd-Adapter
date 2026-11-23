@@ -4,12 +4,24 @@ from uuid import UUID
 
 import pytest
 from auto_mas_core.host.config import ConfigCollection, config_manager
+from auto_mas_core.host.utils import IS_WINDOWS, dpapi_encrypt
 
 from zzzod_adapter.config import ZzzOdConfig
 
 
 @pytest.mark.asyncio
-async def test_activate_legacy_accounts(monkeypatch):
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        None,
+        pytest.param(
+            ("migration@example.invalid", "synthetic migration password"),
+            marks=pytest.mark.skipif(not IS_WINDOWS, reason="仅 Windows 支持 DPAPI"),
+        ),
+    ],
+    ids=["settings", "dpapi"],
+)
+async def test_activate_legacy_accounts(monkeypatch, credentials):
     for name in ("games", "PlanConfig"):
         try:
             config_manager.get_collection(name)
@@ -37,6 +49,13 @@ async def test_activate_legacy_accounts(monkeypatch):
             },
         },
     }
+    if credentials is not None:
+        login, password = credentials
+        cipher = f"DPAPI:{dpapi_encrypt(password)}"
+        payload["UserData"]["data"][str(uid)]["Game"] = {
+            "Account": login,
+            "Password": cipher,
+        }
     config = ZzzOdConfig.build(payload=payload)
     await config.activate()
     assert config.info.name == "Old manager"
@@ -54,7 +73,14 @@ async def test_activate_legacy_accounts(monkeypatch):
 
     persisted = await config.to_dict()
     assert "UserData" not in persisted
+    if credentials is not None:
+        saved = persisted["users"]["data"][str(uid)]["Info"]
+        assert saved["Id"].startswith("DPAPI:")
+        assert saved["Password"] == cipher
     reloaded = ZzzOdConfig.build(payload=persisted)
     await reloaded.activate()
     assert reloaded.users[uid].Info.SlotIdx == 1001
     assert reloaded.users[uid].Notify.PushLogMode == "逐条"
+    if credentials is not None:
+        assert reloaded.users[uid].Info.Id == login
+        assert reloaded.users[uid].Info.Password == password
