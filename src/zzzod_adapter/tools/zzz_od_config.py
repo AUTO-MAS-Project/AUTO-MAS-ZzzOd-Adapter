@@ -368,17 +368,15 @@ def set_instance_force_login(root: Path, idx: int, value: bool) -> None:
     _registry_rmw(root, mutate)
 
 
-def set_active_instance(root: Path, idx: int) -> None:
-    """把指定实例设为当前活跃实例（active=True，其余清 False）。
-
-    zzz-od 的「仅运行当前」跑的就是活跃实例；直控页选择实例后调用，
-    让页面所选实例与实际运行实例保持一致。目标必须存在于原生注册表。
-    """
+def set_active_instance(root: Path, idx: int | None) -> None:
+    """切换原生活跃实例，None 用于还原会话前无活跃实例的状态。"""
 
     def mutate(entries: list[dict]) -> None:
-        target = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
-        if target is None:
-            raise ValueError(f"实例 {int(idx):02d} 不存在")
+        target = None
+        if idx is not None:
+            target = next((e for e in entries if int(e.get("idx", -1)) == idx), None)
+            if target is None:
+                raise ValueError(f"实例 {idx:02d} 不存在")
         for entry in entries:
             entry["active"] = entry is target
 
