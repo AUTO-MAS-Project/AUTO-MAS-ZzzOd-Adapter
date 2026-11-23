@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "auto-mas-zzzod-adapter"
-version = "0.1.0"
+version = "0.1.1"
 description = "Zenless Zone Zero OneDragon adapter for AUTO-MAS"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
