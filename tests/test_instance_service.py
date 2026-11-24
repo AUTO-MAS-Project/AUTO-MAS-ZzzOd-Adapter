@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from zzzod_adapter import api
 from zzzod_adapter.config import ZzzOdConfig
+from zzzod_adapter.tools import restore_instance_view, write_instance_view
 from zzzod_adapter.tools.backup_archive import (
     get_onedragon_backup_dir,
     list_onedragon_backups,
@@ -28,6 +29,7 @@ async def test_rename_native_instance_archives_original(tmp_path, monkeypatch):
     scripts = ConfigCollection.build([ZzzOdConfig])
     await scripts.activate()
     uid = scripts.add(ZzzOdConfig, payload={"Info": {"RootPath": str(root)}})
+    running_uid = scripts.add(ZzzOdConfig, payload={"Info": {"RootPath": str(root)}})
     await scripts.commit()
     monkeypatch.setattr(
         api,
@@ -41,6 +43,23 @@ async def test_rename_native_instance_archives_original(tmp_path, monkeypatch):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
+        running = scripts[running_uid]
+        ticket = await running.try_lock_x(cascade=True)
+        assert ticket is not None
+        try:
+            write_instance_view(root, [(1001, "Running")])
+            view = registry.read_bytes()
+            blocked = await client.post(
+                "/zzzod/instances/add",
+                json={"scriptId": str(uid), "name": "New"},
+            )
+            assert blocked.json()["status"] == "error"
+            assert "正在运行" in blocked.json()["message"]
+            assert registry.read_bytes() == view
+            assert not (root / "config" / "02").exists()
+        finally:
+            restore_instance_view(root)
+            await running.unlock(ticket)
         response = await client.post(
             "/zzzod/instances/rename",
             json={"scriptId": str(uid), "instanceIdx": 1, "name": "Renamed"},

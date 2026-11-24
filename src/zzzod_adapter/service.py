@@ -637,6 +637,7 @@ class ZzzOdService:
             save_native_tasks,
         )
 
+        self.context.ensure_install_unlocked(root)
         if account is not None:
             save_native_account_fields(root, slot, account)
         if tasks is not None:
@@ -674,6 +675,7 @@ class ZzzOdService:
 
         script_config = self.context.script_config(script_id)
         root = self.context.root(script_config)
+        self.context.ensure_install_unlocked(root)
 
         from zzzod_adapter.tools import (
             archive_onedragon_backup,
