@@ -11,9 +11,9 @@
     "ja": "ゼンレスゾーンゼロ OneDragon の管理、アカウント設定、自動実行、バックアップ復元に対応するアダプターです。"
   },
   "tags_i18n": {
-    "zh_CN": ["专项适配", "一条龙"],
-    "en": ["Script adapter", "OneDragon"],
-    "ja": ["専用アダプター", "OneDragon"]
+    "zh_CN": ["专项适配", "绝区零"],
+    "en": ["Script adapter", "Zenless Zone Zero"],
+    "ja": ["専用アダプター", "ゼンレスゾーンゼロ"]
   }
 }
 -->
