@@ -22,6 +22,7 @@ class ZzzOdExpander(UserExpander[ZzzOdConfig]):
 
     async def prepare(self) -> None:
         self._started_at = datetime.now()
+        self._shutdowns: list[Callable[[], Awaitable[None]]] = []
 
     async def finish(self) -> None:
         if self.task_info.mode != TaskMode.AUTO_PROXY:
@@ -65,7 +66,14 @@ class ZzzOdExpander(UserExpander[ZzzOdConfig]):
             case TaskMode.SCRIPT_VIEW:
                 return ZzzOdViewWorker(self, user, config)
             case TaskMode.AUTO_PROXY:
-                return ZzzOdAutoProxyWorker(self, user, config)
+                defer_shutdown = (
+                    self._shutdowns.append
+                    if self.script_config.Game.AccountSwitch == "多实例切换"
+                    else None
+                )
+                return ZzzOdAutoProxyWorker(
+                    self, user, config, defer_shutdown=defer_shutdown
+                )
             case _:
                 raise ValueError("一条龙不支持当前执行模式")
 
@@ -86,22 +94,16 @@ class ZzzOdExpander(UserExpander[ZzzOdConfig]):
             else:
                 direct.append(user)
 
-        shutdowns: list[Callable[[], Awaitable[None]]] = []
         if inject:
-            await self._run_group(tuple(inject), shutdowns=shutdowns)
+            await self._run_group(tuple(inject))
         await super().dispatch_users(tuple(direct))
-        if shutdowns and all(user.status in ("完成", "跳过") for user in users):
-            await shutdowns[0]()
+        if self._shutdowns and all(user.status in ("完成", "跳过") for user in users):
+            await self._shutdowns[0]()
 
     def _binding(self, entry: ZzzOdUserConfig):
         return entry.game if entry.game.game_id != "-" else self.script_config.game
 
-    async def _run_group(
-        self,
-        users: tuple[TaskUserItem, ...],
-        *,
-        shutdowns: list[Callable[[], Awaitable[None]]],
-    ) -> None:
+    async def _run_group(self, users: tuple[TaskUserItem, ...]) -> None:
         async with self.lock_user_group(users) as locked:
             # 一轮一条龙只持有一个游戏设备的会话，其他设备按首次出现的顺序另起一轮。
             groups = {}
@@ -113,15 +115,12 @@ class ZzzOdExpander(UserExpander[ZzzOdConfig]):
                 else:
                     target = (binding.game_id, binding.device_id)
                     groups.setdefault(target, []).append((user, entry))
-            defer_shutdown = shutdowns.append if len(groups) > 1 else None
             for participants in groups.values():
-                await self._run_bound_group(participants, defer_shutdown=defer_shutdown)
+                await self._run_bound_group(participants)
 
     async def _run_bound_group(
         self,
         participants: list[tuple[TaskUserItem, ZzzOdUserConfig]],
-        *,
-        defer_shutdown: Callable[[Callable[[], Awaitable[None]]], None] | None,
     ) -> None:
         """完成同一设备的整轮执行和收尾后，再交给下一组。"""
         lead, config = participants[0]
@@ -133,7 +132,11 @@ class ZzzOdExpander(UserExpander[ZzzOdConfig]):
                 await self.game_session.select(config)
             await self.spawn(
                 ZzzOdAutoProxyWorker(
-                    self, lead, config, participants=runs, defer_shutdown=defer_shutdown
+                    self,
+                    lead,
+                    config,
+                    participants=runs,
+                    defer_shutdown=self._shutdowns.append,
                 )
             )
         except asyncio.CancelledError:

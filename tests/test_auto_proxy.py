@@ -18,19 +18,22 @@ from zzzod_adapter.tools import instance_dir, write_app_group
 
 
 @pytest.mark.parametrize(
-    ("grouped", "cancel", "fail_second", "split_targets"),
+    ("grouped", "cancel", "fail_second", "split_targets", "native_second"),
     [
-        (False, False, False, False),
-        (False, True, False, False),
-        (True, False, False, False),
-        (True, True, False, False),
-        (True, False, True, False),
-        (True, False, True, True),
-        (True, False, False, True),
+        (False, False, False, False, False),
+        (False, True, False, False, False),
+        (True, False, False, False, False),
+        (True, True, False, False, False),
+        (True, False, True, False, False),
+        (True, False, True, True, False),
+        (True, False, False, True, False),
+        (True, False, False, True, "injected-shutdown"),
+        (True, False, True, True, "injected-shutdown"),
+        (True, False, False, True, "native-shutdown"),
     ],
 )
 async def test_worker_persists_result_or_restores_on_cancel(
-    tmp_path, monkeypatch, grouped, cancel, fail_second, split_targets
+    tmp_path, monkeypatch, grouped, cancel, fail_second, split_targets, native_second
 ):
     work_dir = tmp_path / "mas"
     work_dir.mkdir()
@@ -46,6 +49,8 @@ async def test_worker_persists_result_or_restores_on_cancel(
     write_app_group(slot, [{"app_id": "previous", "enabled": True}])
     registry = root / "config" / "one_dragon.yml"
     original = b"instance_list:\n  - idx: 1\n    name: Native\n    active: true\n"
+    if native_second == "native-shutdown":
+        original += "after_done: 关机\n".encode()
     registry.write_bytes(original)
     if split_targets:
         collections = dict(config_manager._collections)
@@ -79,8 +84,10 @@ async def test_worker_persists_result_or_restores_on_cancel(
     users = []
     slots = [slot]
     if grouped:
-        second_slot = instance_dir(root, 1002)
+        second_slot = instance_dir(root, 1 if native_second else 1002)
         second_slot.mkdir()
+        if native_second:
+            (second_slot / "game_account.yml").write_text("game_path: game.exe\n")
         slots.append(second_slot)
     for index, directory in enumerate(slots, start=1):
         game = {"game_id": game_id} if split_targets and index == 2 else {}
@@ -89,6 +96,7 @@ async def test_worker_persists_result_or_restores_on_cancel(
             payload={
                 "game": game,
                 "Info": {
+                    "Base": "native" if native_second and index == 2 else "shared",
                     "Name": f"Account{index}",
                     "SlotIdx": int(directory.name),
                     "RemainedDay": 3,
@@ -97,7 +105,11 @@ async def test_worker_persists_result_or_restores_on_cancel(
                 },
                 "OneDragon": {
                     "AppList": json.dumps([{"app_id": "mail", "enabled": True}]),
-                    "AfterDone": "关机" if split_targets and index == 1 else "无",
+                    "AfterDone": "关机"
+                    if split_targets
+                    and index == 1
+                    and native_second != "native-shutdown"
+                    else "无",
                 },
             },
         )
@@ -119,8 +131,11 @@ async def test_worker_persists_result_or_restores_on_cancel(
         nonlocal running
         running = True
         assert path == launcher
-        assert registry.read_bytes() != original
-        assert all(account.is_locked for account in accounts)
+        if native_second:
+            assert accounts[1 if launched_slots else 0].is_locked
+        else:
+            assert registry.read_bytes() != original
+            assert all(account.is_locked for account in accounts)
         shutdown.assert_not_awaited()
         if "--instance" in args:
             launched_slots.append(
@@ -153,13 +168,15 @@ async def test_worker_persists_result_or_restores_on_cancel(
         return running
 
     async def kill():
-        assert registry.read_bytes() != original
-        assert all(account.is_locked for account in accounts)
+        if not native_second:
+            assert registry.read_bytes() != original
+            assert all(account.is_locked for account in accounts)
 
     async def schedule_shutdown(*args):
         assert args == ("shutdown", "/s", "/t", "60")
-        assert launched_slots == [(1001,), (1002,)]
+        assert launched_slots == [(1001,), (int(slots[1].name),)]
         assert registry.read_bytes() == original
+        assert not any(account.is_locked for account in accounts)
         return SimpleNamespace(wait=AsyncMock(return_value=0))
 
     shutdown = AsyncMock(side_effect=schedule_shutdown)
@@ -201,7 +218,7 @@ async def test_worker_persists_result_or_restores_on_cancel(
     assert registry.read_bytes() == original
     assert not any(account.is_locked for account in accounts)
     expected_launches = (
-        [(1001,), (1002,)]
+        [(1001,), (int(slots[1].name),)]
         if split_targets
         else [tuple(int(directory.name) for directory in slots)]
     )
