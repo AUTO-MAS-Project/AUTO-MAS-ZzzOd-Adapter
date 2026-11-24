@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from auto_mas_core.host.utils import io as _utils_io
+from yaml import YAMLError
 
 _COMPENDIUM_REL = Path("assets") / "game_data" / "compendium_data.yml"
 
@@ -60,7 +61,12 @@ def _read_compendium(root: Path) -> list:
     cached = _SCAN_CACHE.get(path)
     if cached is not None and cached[0] == signature:
         return cached[1]
-    data = _utils_io.read_file(path) or []
+    try:
+        data = _utils_io.read_file(path)
+    except (UnicodeError, YAMLError) as exc:
+        raise _utils_io.ConfigCorruptedError(path) from exc
+    if not isinstance(data, list) or not data:
+        raise _utils_io.ConfigCorruptedError(path)
     _SCAN_CACHE[path] = (signature, data)
     return data
 
@@ -213,15 +219,18 @@ def coffee_options(root: Path, day: int) -> list[dict]:
     """指定星期几（1~7）可选的咖啡选项（assets/game_data/coffee_data.yml，
     与上游 ``get_coffee_config_list_by_day`` 同源同规则）。"""
 
-    data = _utils_io.read_file(root / _COFFEE_REL) or {}
-    if not isinstance(data, dict):
-        return []
+    path = root / _COFFEE_REL
+    data = _utils_io.read_dict_file(path)
+    coffee_entries = data.get("coffee_list")
+    schedule_entries = data.get("schedule", [])
+    if not isinstance(coffee_entries, list) or not isinstance(schedule_entries, list):
+        raise _utils_io.ConfigCorruptedError(path)
     all_coffee = {
         str(i.get("coffee_name")): _coffee_display(i)
-        for i in data.get("coffee_list") or []
+        for i in coffee_entries
         if isinstance(i, dict) and i.get("coffee_name")
     }
-    for schedule in data.get("schedule") or []:
+    for schedule in schedule_entries:
         if not isinstance(schedule, dict):
             continue
         try:
