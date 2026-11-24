@@ -15,7 +15,8 @@ keywords = ["auto-mas-plugin", "auto-mas-id:zzzod_adapter"]
 dependencies = ["auto-mas-core>=5.9.0b1,<6"]
 
 [project.urls]
-Changelog = "https://github.com/AthenaHibou/AUTO-MAS-ZzzOd-Adapter/blob/HEAD/CHANGELOG.md"
+Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS-ZzzOd-Adapter"
+Changelog = "https://github.com/AUTO-MAS-Project/AUTO-MAS-ZzzOd-Adapter/blob/HEAD/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
