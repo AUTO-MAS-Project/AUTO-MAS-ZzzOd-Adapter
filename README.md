@@ -1,7 +1,7 @@
 <!-- auto-mas:i18n
 {
   "display_name_i18n": {
-    "zh_CN": "绝区零一条龙",
+    "zh_CN": "绝区零一条龙专项",
     "en": "Zenless Zone Zero OneDragon",
     "ja": "ゼンレスゾーンゼロ OneDragon"
   },
@@ -11,9 +11,9 @@
     "ja": "ゼンレスゾーンゼロ OneDragon の管理、アカウント設定、自動実行、バックアップ復元に対応するアダプターです。"
   },
   "tags_i18n": {
-    "zh_CN": ["专项", "迁移预览"],
-    "en": ["Adapter", "Migration preview"],
-    "ja": ["アダプター", "移行プレビュー"]
+    "zh_CN": ["专项适配", "一条龙"],
+    "en": ["Script adapter", "OneDragon"],
+    "ja": ["専用アダプター", "OneDragon"]
   }
 }
 -->
