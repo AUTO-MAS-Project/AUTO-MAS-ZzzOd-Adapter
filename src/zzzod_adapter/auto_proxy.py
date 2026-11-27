@@ -44,10 +44,7 @@ from auto_mas_core.host.models_schema import (
 from auto_mas_core.host.models_task import LogRecord, TaskUserItem
 from auto_mas_core.host.services import execute_script_task, script_install
 from auto_mas_core.host.task_client import ClientProcess, client_executable_path
-from auto_mas_core.host.task_process_context import (
-    desktop_process_target,
-    has_process_window,
-)
+from auto_mas_core.host.task_process_context import has_process_window
 from auto_mas_core.host.task_proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -68,6 +65,7 @@ from auto_mas_core.host.utils import (
     wait_process_window_ready,
 )
 from auto_mas_core.host.utils_common_process_runner import create_subprocess
+from auto_mas_core.host.utils_process_session import desktop_process_target
 
 from .config import ZzzOdUserConfig
 from .launchers import (

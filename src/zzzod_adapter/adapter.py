@@ -1,19 +1,23 @@
 """将插件配置、执行器和专项路由注册到 MAS。"""
 
+from typing import Literal
+
 from auto_mas_core import ScriptAdapterPlugin, ScriptEntry, ScriptTypeDecl
-from auto_mas_core.host.utils import IS_ELEVATED
 from fastapi import APIRouter
 
 from .api import router
 from .config import ZzzOdConfig, ZzzOdUserConfig
 from .expander import ZzzOdExpander
+from .tools.restore_service import RESTORE_POOLS
 
 _api = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 _api.include_router(router)
 
 
-def _supports_desktop_session(_config: ScriptEntry) -> bool:
-    return IS_ELEVATED
+def _desktop_session_check(
+    _config: ScriptEntry, elevated: bool
+) -> Literal["admin_required"] | None:
+    return None if elevated else "admin_required"
 
 
 def _new_user_defaults() -> dict:
@@ -29,6 +33,7 @@ class ZzzOdAdapter(ScriptAdapterPlugin):
         expander_class=ZzzOdExpander,
         activity_game="zenless",
         game_kinds=("client",),
-        desktop_session_check=_supports_desktop_session,
+        desktop_session_check=_desktop_session_check,
         new_user_defaults=_new_user_defaults,
+        restore_pools=tuple(RESTORE_POOLS),
     )

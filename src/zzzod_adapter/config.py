@@ -21,10 +21,10 @@
 import json
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from auto_mas_core import ScriptEntry, UserEntry
+from auto_mas_core import DesktopSessionRunFields, ScriptEntry, UserEntry
 from auto_mas_core.host.config import (
     ConfigCollection,
     ConfigGroup,
@@ -48,9 +48,6 @@ from auto_mas_core.host.models_config_shared import (
 )
 from auto_mas_core.host.utils import constants as _utils_constants
 from pydantic import Field, model_validator
-
-if TYPE_CHECKING:
-    from auto_mas_core.host.utils_common_config import restore as restore_sdk
 
 
 class ZzzOdUserConfig(UserEntry):
@@ -407,7 +404,7 @@ class ZzzOdConfig(ScriptEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -447,25 +444,6 @@ class ZzzOdConfig(ScriptEntry):
             normalized.setdefault("users", normalized.pop("UserData"))
         await super()._activate_from_payload(
             normalized, regenerate_uuids=regenerate_uuids
-        )
-
-    def create_restore_service(
-        self, user_id: str, *, force: bool = False
-    ) -> "restore_sdk.ConfigRestoreService":
-        from auto_mas_core import Config
-        from auto_mas_core.host.utils_common_config import restore
-
-        from .tools.restore_service import RESTORE_POOLS
-
-        return restore.build_restore_service(
-            restore.RestoreContext(
-                config=Config,
-                script_config=self,
-                script_id=str(self.uid),
-                user_id=user_id,
-                force=force,
-            ),
-            RESTORE_POOLS,
         )
 
     async def prepare_script_removal(self) -> None:

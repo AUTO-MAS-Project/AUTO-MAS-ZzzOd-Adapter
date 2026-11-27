@@ -37,7 +37,7 @@
 
 宿主的 `refactor/zzzod-plugin-cutover` 是移除内置后端的本地验证分支，现有托管可触发插件安装或启用。该分支使用 `0.1.1` 或更新的候选包，可识别并升级早期的 `0.1.0` 预览包。
 
-正式标签 `v5.9.0-beta.1` 缺少完整接管需要的 `task_client` 和 `task_process_context`。联调须使用包含这两个 SDK 接口的配套宿主。
+发行包要求 `auto-mas-core>5.10.0b1,<6`。正式标签 `v5.10.0-beta.1` 缺少完整接管需要的 `task_client` 和 `task_process_context`。首发前需用实际包含这两个接口的宿主发行版验证安装和接管。
 
 ## 待接入与发布
 

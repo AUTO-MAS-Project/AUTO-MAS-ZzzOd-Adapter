@@ -6,7 +6,15 @@ import pytest
 from auto_mas_core.host.config import ConfigCollection, config_manager
 from auto_mas_core.host.utils import IS_WINDOWS, dpapi_encrypt
 
+from zzzod_adapter.adapter import ZzzOdAdapter
 from zzzod_adapter.config import ZzzOdConfig
+
+
+def test_desktop_session_permission_and_default():
+    config = ZzzOdConfig.build()
+    assert config.Run.ExecutionSession == "main"
+    assert ZzzOdAdapter.decl.desktop_session_reason(config, False) == "admin_required"
+    assert ZzzOdAdapter.decl.desktop_session_reason(config, True) is None
 
 
 @pytest.mark.asyncio
@@ -33,6 +41,7 @@ async def test_activate_legacy_accounts(monkeypatch, credentials):
     uid = UUID("1babee9d-5a64-4d33-b9a3-702bf5fb7ced")
     payload = {
         "Info": {"Name": "Old manager"},
+        "Run": {"ExecutionSession": "desktop"},
         "UserData": {
             "order": [{"uid": str(uid), "type": "ZzzOdUserConfig"}],
             "data": {
@@ -59,6 +68,7 @@ async def test_activate_legacy_accounts(monkeypatch, credentials):
     config = ZzzOdConfig.build(payload=payload)
     await config.activate()
     assert config.info.name == "Old manager"
+    assert config.Run.ExecutionSession == "desktop"
     assert [entry.uid for entry in config.users.values()] == [uid]
     user = config.users[uid]
     assert user.info.name == "Old account"
@@ -79,6 +89,7 @@ async def test_activate_legacy_accounts(monkeypatch, credentials):
         assert saved["Password"] == cipher
     reloaded = ZzzOdConfig.build(payload=persisted)
     await reloaded.activate()
+    assert reloaded.Run.ExecutionSession == "desktop"
     assert reloaded.users[uid].Info.SlotIdx == 1001
     assert reloaded.users[uid].Notify.PushLogMode == "逐条"
     if credentials is not None:

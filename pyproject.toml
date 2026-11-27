@@ -12,7 +12,7 @@ license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "AUTO-MAS Team" }]
 keywords = ["auto-mas-plugin", "auto-mas-id:zzzod_adapter"]
-dependencies = ["auto-mas-core>=5.9.0b1,<6"]
+dependencies = ["auto-mas-core>5.10.0b1,<6"]
 
 [project.urls]
 Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS-ZzzOd-Adapter"
