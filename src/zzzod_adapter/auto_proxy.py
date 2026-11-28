@@ -44,10 +44,6 @@ from auto_mas_core.host.models_schema import (
 from auto_mas_core.host.models_task import LogRecord, TaskUserItem
 from auto_mas_core.host.services import execute_script_task, script_install
 from auto_mas_core.host.task_client import ClientProcess, client_executable_path
-from auto_mas_core.host.task_process_context import (
-    desktop_process_target,
-    has_process_window,
-)
 from auto_mas_core.host.task_proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -64,10 +60,15 @@ from auto_mas_core.host.utils import (
     ProcessInfo,
     ProcessManager,
     get_logger,
+    is_process_running,
     process,
     wait_process_window_ready,
 )
 from auto_mas_core.host.utils_common_process_runner import create_subprocess
+from auto_mas_core.host.utils_common_process_session import desktop_process_target
+from auto_mas_core.host.utils_windows_desktop_session_process_runner import (
+    run_desktop_action,
+)
 
 from .config import ZzzOdUserConfig
 from .launchers import (
@@ -1770,7 +1771,15 @@ class ZzzOdAutoProxyWorker(AutoProxyWorker):
         if not isinstance(self.game_process_manager, ProcessManager):
             return
         await self._push_dispatch_log(f"正在检查游戏进程 ({_ZZZ_GAME_PROCESS})...")
-        if await has_process_window(_ZZZ_GAME_PROCESS):
+        desktop = desktop_process_target.get()
+        if desktop is None:
+            game_running = is_process_running(_ZZZ_GAME_PROCESS)
+        else:
+            code, _, _ = await run_desktop_action(
+                desktop, "has_process_window", {"name": _ZZZ_GAME_PROCESS, "exe": None}
+            )
+            game_running = code == 0
+        if game_running:
             logger.info("检测到游戏本体进程已在运行，跳过由 MAS 重复启动游戏")
             await self._push_dispatch_log("检测到游戏已在运行，跳过启动")
             await self._note_launch_arguments_skipped()

@@ -23,6 +23,7 @@ from typing import (
     Literal,
     Optional,
 )
+from uuid import UUID
 
 from auto_mas_core import Config
 from auto_mas_core.host.models_schema import (
@@ -30,7 +31,7 @@ from auto_mas_core.host.models_schema import (
     OutBase,
 )
 from auto_mas_core.host.utils import get_logger
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import (
     BaseModel,
     Field,
@@ -496,6 +497,38 @@ def _zzzod_instances_response(instances: list[dict]) -> ZzzOdInstancesOut:
 
 
 router = APIRouter()
+panel_router = APIRouter(prefix="/editor", include_in_schema=False)
+
+
+@panel_router.get("/script/{script_id}")
+async def get_script_editor_context(script_id: UUID):
+    """返回槽位管理所需的托管状态及恢复目标。"""
+    context = zzzod_api.get_service(Config).context
+    try:
+        script = context.script_config(str(script_id))
+    except (KeyError, TypeError) as error:
+        raise HTTPException(404, "绝区零一条龙托管不存在") from error
+    return {
+        "rootPath": str(script.Info.RootPath or ""),
+        "users": [
+            {"value": str(uid), "label": user.Info.Name}
+            for uid, user in script.users.items()
+        ],
+    }
+
+
+@panel_router.get("/user/{script_id}/{user_id}")
+async def get_user_editor_context(script_id: UUID, user_id: UUID):
+    """返回由声明式分区编辑的配置来源及安装状态。"""
+    context = zzzod_api.get_service(Config).context
+    try:
+        script = context.script_config(str(script_id))
+        user = script.users[user_id]
+    except (KeyError, TypeError) as error:
+        raise HTTPException(404, "绝区零一条龙账号不存在") from error
+    return {"rootPath": str(script.Info.RootPath or ""), "base": user.Info.Base}
+
+
 logger = get_logger("托管管理 API")
 
 

@@ -21,16 +21,18 @@ from zzzod_adapter.tools import (
 
 
 @pytest.mark.parametrize(
-    ("worker_class", "mode", "native"),
+    ("worker_class", "mode", "source"),
     [
-        (gui_session.ZzzOdConfigWorker, TaskMode.SCRIPT_CONFIG, False),
-        (gui_session.ZzzOdConfigWorker, TaskMode.SCRIPT_CONFIG, True),
-        (gui_session.ZzzOdViewWorker, TaskMode.SCRIPT_VIEW, False),
+        (gui_session.ZzzOdConfigWorker, TaskMode.SCRIPT_CONFIG, "managed"),
+        (gui_session.ZzzOdConfigWorker, TaskMode.SCRIPT_CONFIG, "script"),
+        (gui_session.ZzzOdConfigWorker, TaskMode.SCRIPT_CONFIG, "native_user"),
+        (gui_session.ZzzOdViewWorker, TaskMode.SCRIPT_VIEW, "managed"),
     ],
 )
 async def test_gui_session_restores_registry_and_view_skips_readback(
-    tmp_path, monkeypatch, worker_class, mode, native
+    tmp_path, monkeypatch, worker_class, mode, source
 ):
+    native = source != "managed"
     work_dir = tmp_path / "mas"
     work_dir.mkdir()
     monkeypatch.chdir(work_dir)
@@ -42,7 +44,9 @@ async def test_gui_session_restores_registry_and_view_skips_readback(
     slot_dir.mkdir(parents=True)
     registry = root / "config" / "one_dragon.yml"
     baseline = b"instance_list:\n  - idx: 1\n    name: Native\n    active: true\n"
-    registry.write_bytes(baseline.replace(b"true", b"false") if native else baseline)
+    if source == "script":
+        baseline = baseline.replace(b"true", b"false")
+    registry.write_bytes(baseline)
     old_apps = [{"app_id": "mail", "enabled": False}]
     slot_apps = [{"app_id": "history", "enabled": True}]
     new_apps = [{"app_id": "coffee", "enabled": True}]
@@ -55,23 +59,27 @@ async def test_gui_session_restores_registry_and_view_skips_readback(
     uid = script.users.add(
         ZzzOdUserConfig,
         payload={
-            "Info": {"SlotIdx": 1001},
+            "Info": {
+                "SlotIdx": 1001,
+                "Base": "native" if source == "native_user" else "independent",
+            },
             "OneDragon": {"AppList": json.dumps(old_apps)},
         },
     )
     await script.users.commit()
     user_config = script.users[uid]
+    initial_apps = user_config.OneDragon.AppList
     monkeypatch.setattr(gui_session, "Config", SimpleNamespace(ScriptConfig=scripts))
 
     task = TaskItem.build(payload={"info": {"mode": mode}})
     await task.activate()
-    params = {"instance_idx": 1} if native else {}
+    params = {"instance_idx": 1} if source == "script" else {}
     rid = task.scripts.add(
         TaskScriptItem, payload={"info": {"script_id": str(sid), "params": params}}
     )
     await task.scripts.commit()
     run = task.scripts[rid]
-    target = "default" if native else str(uid)
+    target = "default" if source == "script" else str(uid)
     user_run_id = run.users.add(TaskUserItem, payload={"info": {"user_id": target}})
     await run.users.commit()
     user_run = run.users[user_run_id]
@@ -108,8 +116,12 @@ async def test_gui_session_restores_registry_and_view_skips_readback(
     kill.assert_awaited_once()
     assert user_run.status == "已取消"
     if native:
-        assert find_active_instance(root) is None
-        assert json.loads(user_config.OneDragon.AppList) == old_apps
+        if source == "script":
+            assert find_active_instance(root) is None
+        else:
+            assert registry.read_bytes() == baseline
+        assert user_config.OneDragon.AppList == initial_apps
+        assert read_app_group(slot_dir) == slot_apps
         return
 
     assert registry.read_bytes() == baseline
