@@ -163,6 +163,7 @@ RESTORE_POOLS = [
     _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
+        editor_scope="user",
         mas_base="user_only",
         files=_mas_files,
         backup_root=_mas_root,
@@ -172,6 +173,7 @@ RESTORE_POOLS = [
     _utils_config_restore.ConfigRestorePool(
         key="onedragon",
         kind="script",
+        editor_scope="user",
         files=_onedragon_files,
         backup_root=_onedragon_root,
         preview=_preview_onedragon,

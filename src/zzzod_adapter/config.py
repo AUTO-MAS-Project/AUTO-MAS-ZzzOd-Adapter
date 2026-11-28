@@ -24,10 +24,17 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import UUID
 
-from auto_mas_core import ScriptEntry, UserEntry
+from auto_mas_core import (
+    DeclarativeBlock,
+    HostBlock,
+    PluginBlock,
+    ScriptEntry,
+    UserEntry,
+)
 from auto_mas_core.host.config import (
     ConfigCollection,
     ConfigGroup,
+    FieldChangeEvent,
     UiVisibility,
     Virtual,
     collection,
@@ -62,6 +69,16 @@ class ZzzOdUserConfig(UserEntry):
     与 one_dragon/_group.yml 注入当前活跃实例槽、结束恢复原状（MAS 不留
     痕迹）。原生（native）来源不使用字段配置，直接以 zzz-od 原生配置运行。
     """
+
+    ui_native_session = "config"
+    ui_blocks = (
+        HostBlock("config_restore"),
+        HostBlock("native_session"),
+        DeclarativeBlock(("Info",)),
+        PluginBlock("user", fallback_groups=("Game", "OneDragon")),
+        DeclarativeBlock(("Notify",)),
+        HostBlock("webhooks"),
+    )
 
     class DataFields(AccountRunFields, AccountRunStatusFields):
         LauncherLastGood: Annotated[
@@ -162,12 +179,13 @@ class ZzzOdUserConfig(UserEntry):
                 name="Mode",
                 convert=_utils_constants.normalize_base_source,
             ),
+            ui(options=["independent", "native"]),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
         )
 
-        IfQuickConfig: bool = Field(
+        IfQuickConfig: Annotated[bool, ui(visibility=UiVisibility.HIDE)] = Field(
             default_factory=lambda: True,
             description="是否启用覆写常规配置（已封锁，仅保留字段兼容存量数据：原生来源在 load/update 归一为关，共享/独立来源不消费本开关）",
         )
@@ -177,7 +195,9 @@ class ZzzOdUserConfig(UserEntry):
             description="一条龙启动器选择（原生/独立两态通用）： 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）",
         )
 
-        SlotIdx: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        SlotIdx: Annotated[
+            int, Field(ge=-1, le=9999), ui(visibility=UiVisibility.HIDE)
+        ] = Field(
             default_factory=lambda: -1,
             description="绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束， 此后配置会话与运行时注入都固定使用该槽。新槽从 MAS_SLOT_BASE（1001）起， 退到一条龙「升序找最小空号」够不到的高位段（上限 9999 与之一致放宽）",
         )
@@ -354,12 +374,34 @@ class ZzzOdUserConfig(UserEntry):
             self.normalize_payload(payload), regenerate_uuids=regenerate_uuids
         )
 
+    @staticmethod
+    async def apply_config_source(
+        user: "ZzzOdUserConfig", event: FieldChangeEvent
+    ) -> None:
+        if event.value == "native" and user.Info.IfQuickConfig:
+            user.Info.IfQuickConfig = False
+            await user.commit()
+
+
+ZzzOdUserConfig.connect(
+    ZzzOdUserConfig.apply_config_source, phase="runtime", group="Info", field="Base"
+)
+
 
 class ZzzOdConfig(ScriptEntry):
     "绝区零一条龙配置（zzz-od 线）"
 
+    ui_blocks = (
+        DeclarativeBlock(("Info",)),
+        HostBlock("game_binding"),
+        PluginBlock("script", fallback_groups=("Game", "Run")),
+    )
+
     class GameFields(ConfigGroup):
-        AccountSwitch: Literal["单实例切换", "多实例切换", "MAS切换"] = Field(
+        AccountSwitch: Annotated[
+            Literal["单实例切换", "多实例切换", "MAS切换"],
+            ui(options=["单实例切换", "多实例切换"]),
+        ] = Field(
             default_factory=lambda: "单实例切换",
             description="多账号账号切换方式（托管级下拉，value 对应 manager 的分派分支）： 单实例切换（默认，推荐）= 逐账号独立会话：注入该账号配置 → 单实例 运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个账号。失败域 隔离最好，重试只重启失败账号； 多实例切换（不推荐）= 全部启用账号合并为一轮多账号运行，一条龙内部 依次切换账号。总时长最短，但单槽失败会拖整轮重试、切换次数随 账号数线性增长； MAS切换 = MAS 侧 OCR 操控游戏完成账号切换后交一条龙运行（暂未开放）。",
         )

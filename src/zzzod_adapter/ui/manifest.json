@@ -1,0 +1,8 @@
+{
+  "manifestVersion": 1,
+  "pages": {
+    "script": { "web": { "entry": "script.html", "panelApi": 1 } },
+    "user": { "web": { "entry": "user.html", "panelApi": 1 } }
+  },
+  "bindings": []
+}

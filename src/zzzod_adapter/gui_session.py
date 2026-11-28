@@ -80,7 +80,11 @@ class _GuiSession(ModeWorker):
             return "请先配置绝区零一条龙安装目录"
         self.root_path = root.resolve()
         self.exe_path = find_launcher_exe(self.root_path)
-        if self.cur_user_config is None:
+        # 宿主从账号页打开配置会话时，原生来源沿用完整原生实例列表。
+        if self.cur_user_config is None or (
+            not self.view_only and self.cur_user_config.Info.Base == "native"
+        ):
+            self.cur_user_config = None
             idx = self.expander.context.params.get("instance_idx")
             if idx is not None and (type(idx) is not int or idx < 0):
                 return "instance_idx 必须为非负整数"

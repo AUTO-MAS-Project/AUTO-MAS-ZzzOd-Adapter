@@ -1,0 +1,91 @@
+#app,
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.card > :last-child {
+  margin-block-end: 0;
+}
+
+.row,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.row > label {
+  flex: 1 1 145px;
+}
+
+.actions {
+  margin-block: 8px;
+}
+
+button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--mas-border, GrayText);
+  border-radius: var(--mas-radius, 6px);
+  background: var(--mas-bg-elevated, Canvas);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--mas-primary, Highlight);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+details[open] > summary {
+  margin-block-end: 12px;
+}
+
+h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.line {
+  padding-block: 8px;
+  border-block-end: 1px solid var(--mas-border, GrayText);
+}
+
+.line:last-child {
+  border-block-end: 0;
+}
+
+.scroll-list {
+  max-height: 26rem;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: start;
+}
+
+th,
+td {
+  padding: 6px;
+  border-block-end: 1px solid var(--mas-border, GrayText);
+  text-align: start;
+}
+
+p,
+code {
+  overflow-wrap: anywhere;
+}
